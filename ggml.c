@@ -449,6 +449,8 @@ static inline __m128i packNibbles( __m256i bytes )
 // blocks of QK elements
 // represented with a single float (delta) and QK/2 8-bit ints (i.e QK 4-bit signed integer factors)
 
+#define TF(x, sig) (0.5*(1.0f + erf((x/sig)/sqrtf(2.0f))) - 0.5f)
+
 // reference implementation for deterministic creation of model files
 static void quantize_row_q4_0_reference(const float * restrict x, void * restrict y, int k) {
     assert(k % QK == 0);
@@ -461,11 +463,17 @@ static void quantize_row_q4_0_reference(const float * restrict x, void * restric
 
     uint8_t pp[QK/2];
 
+    double sig = 0.0;
+    for (int i = 0; i < k; i++) {
+        sig += x[i]*x[i];
+    }
+    sig = sqrt(sig/k);
+
     for (int i = 0; i < nb; i++) {
         float amax = 0.0f; // absolute max
 
         for (int l = 0; l < QK; l++) {
-            const float v = x[i*QK + l];
+            const float v = TF(x[i*QK + l], sig);
             amax = MAX(amax, fabsf(v));
         }
 
@@ -476,8 +484,8 @@ static void quantize_row_q4_0_reference(const float * restrict x, void * restric
         pd += bs;
 
         for (int l = 0; l < QK; l += 2) {
-            const float v0 = x[i*QK + l + 0]*id;
-            const float v1 = x[i*QK + l + 1]*id;
+            const float v0 = TF(x[i*QK + l + 0], sig)*id;
+            const float v1 = TF(x[i*QK + l + 1], sig)*id;
 
             const uint8_t vi0 = ((int8_t) (round(v0))) + 8;
             const uint8_t vi1 = ((int8_t) (round(v1))) + 8;
